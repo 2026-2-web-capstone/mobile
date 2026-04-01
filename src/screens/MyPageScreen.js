@@ -7,6 +7,7 @@ import {
   Image,
   StyleSheet,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useForm, Controller } from "react-hook-form";
@@ -19,6 +20,8 @@ import {
 } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../contexts/AuthContext";
+import { USE_MOCK_DATA } from "../api/config";
+import { authApi } from "../api/authApi";
 import Input from "../components/Input";
 import Button from "../components/Button";
 import {
@@ -31,10 +34,12 @@ import {
 
 const MyPageScreen = () => {
   const navigation = useNavigation();
-  const { user, updateUser, logout, isAuthenticated } = useAuth();
+  const { user, updateUser, logout, deleteAccount, isAuthenticated } =
+    useAuth();
   const [activeTab, setActiveTab] = useState("profile");
   const [purchases, setPurchases] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [isLoadingData, setIsLoadingData] = useState(false);
   const {
     control,
     handleSubmit,
@@ -51,6 +56,7 @@ const MyPageScreen = () => {
     if (user) {
       setValue("name", user.name);
       setValue("email", user.email);
+      setValue("phone", user.phone || "");
     }
 
     loadPurchases();
@@ -58,41 +64,78 @@ const MyPageScreen = () => {
   }, [user, isAuthenticated]);
 
   const loadPurchases = async () => {
+    setIsLoadingData(true);
     try {
-      const savedPurchases = await AsyncStorage.getItem(
-        `purchases_${user?.id}`
-      );
-      if (savedPurchases) {
-        setPurchases(JSON.parse(savedPurchases));
+      if (USE_MOCK_DATA) {
+        const savedPurchases = await AsyncStorage.getItem(
+          `purchases_${user?.id}`,
+        );
+        if (savedPurchases) {
+          setPurchases(JSON.parse(savedPurchases));
+        }
+      } else {
+        const data = await authApi.getMyOrders(0, 50);
+        const orderList = data.content || data;
+        setPurchases(
+          (orderList || []).map((order) => ({
+            id: order.id,
+            title: order.bookTitle || `주문 #${order.id}`,
+            totalPrice: order.totalPrice,
+            status: order.status,
+            date: order.createdAt,
+            image: order.thumbnailUrl,
+            items: order.items || [],
+          })),
+        );
       }
     } catch (error) {
       console.error("Failed to load purchases:", error);
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
   const loadReviews = async () => {
     try {
-      const keys = await AsyncStorage.getAllKeys();
-      const reviewKeys = keys.filter((key) => key.startsWith("reviews_"));
-      const allReviews = [];
+      if (USE_MOCK_DATA) {
+        const keys = await AsyncStorage.getAllKeys();
+        const reviewKeys = keys.filter((key) => key.startsWith("reviews_"));
+        const allReviews = [];
 
-      for (const key of reviewKeys) {
-        const bookReviews = await AsyncStorage.getItem(key);
-        if (bookReviews) {
-          const parsed = JSON.parse(bookReviews);
-          const userReviews = parsed.filter((r) => r.userId === user?.id);
-          allReviews.push(...userReviews);
+        for (const key of reviewKeys) {
+          const bookReviews = await AsyncStorage.getItem(key);
+          if (bookReviews) {
+            const parsed = JSON.parse(bookReviews);
+            const userReviews = parsed.filter((r) => r.userId === user?.id);
+            allReviews.push(...userReviews);
+          }
         }
+        setReviews(allReviews);
+      } else {
+        const data = await authApi.getMyReviews(0, 50);
+        const reviewList = data.content || data;
+        setReviews(
+          (reviewList || []).map((r) => ({
+            id: r.id,
+            rating: r.rating,
+            text: r.content,
+            date: r.createdAt,
+            bookTitle: r.bookTitle,
+          })),
+        );
       }
-      setReviews(allReviews);
     } catch (error) {
       console.error("Failed to load reviews:", error);
     }
   };
 
   const onSubmit = async (data) => {
-    await updateUser(data);
-    Alert.alert("알림", "정보가 수정되었습니다.");
+    try {
+      await updateUser({ name: data.name, phone: data.phone });
+      Alert.alert("알림", "정보가 수정되었습니다.");
+    } catch (error) {
+      Alert.alert("오류", error.message || "정보 수정에 실패했습니다.");
+    }
   };
 
   const handleWithdraw = () => {
@@ -102,9 +145,17 @@ const MyPageScreen = () => {
         text: "탈퇴",
         style: "destructive",
         onPress: async () => {
-          await logout();
-          Alert.alert("알림", "탈퇴되었습니다.");
-          navigation.navigate("Home");
+          try {
+            if (deleteAccount) {
+              await deleteAccount();
+            } else {
+              await logout();
+            }
+            Alert.alert("알림", "탈퇴되었습니다.");
+            navigation.navigate("Home");
+          } catch (error) {
+            Alert.alert("오류", "탈퇴 처리에 실패했습니다.");
+          }
         },
       },
     ]);
@@ -138,6 +189,57 @@ const MyPageScreen = () => {
       ))}
     </View>
   );
+
+  const renderPurchaseItem = (purchase, index) => {
+    if (USE_MOCK_DATA) {
+      return (
+        <View key={index} style={styles.purchaseItem}>
+          <Image
+            source={{ uri: purchase.image }}
+            style={styles.purchaseImage}
+            resizeMode="cover"
+          />
+          <View style={styles.purchaseInfo}>
+            <Text style={styles.purchaseTitle} numberOfLines={2}>
+              {purchase.title}
+            </Text>
+            <Text style={styles.purchaseAuthor}>{purchase.author}</Text>
+            <Text style={styles.purchasePrice}>
+              {purchase.price.toLocaleString()}원 × {purchase.quantity}
+            </Text>
+            <Text style={styles.purchaseDate}>
+              구매일: {new Date(purchase.date).toLocaleDateString("ko-KR")}
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    // API 모드: 주문 정보 표시
+    return (
+      <View key={purchase.id} style={styles.purchaseItem}>
+        {purchase.image && (
+          <Image
+            source={{ uri: purchase.image }}
+            style={styles.purchaseImage}
+            resizeMode="cover"
+          />
+        )}
+        <View style={styles.purchaseInfo}>
+          <Text style={styles.purchaseTitle} numberOfLines={2}>
+            {purchase.title}
+          </Text>
+          <Text style={styles.purchasePrice}>
+            {(purchase.totalPrice || 0).toLocaleString()}원
+          </Text>
+          <Text style={styles.purchaseStatus}>상태: {purchase.status}</Text>
+          <Text style={styles.purchaseDate}>
+            주문일: {new Date(purchase.date).toLocaleDateString("ko-KR")}
+          </Text>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -210,6 +312,21 @@ const MyPageScreen = () => {
               )}
             />
 
+            <Controller
+              control={control}
+              name="phone"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <Input
+                  label="전화번호"
+                  placeholder="010-1234-5678"
+                  keyboardType="phone-pad"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
+            />
+
             <Button onPress={handleSubmit(onSubmit)}>정보 수정</Button>
           </View>
         )}
@@ -218,29 +335,16 @@ const MyPageScreen = () => {
         {activeTab === "purchases" && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>구매 목록</Text>
-            {purchases.length > 0 ? (
-              purchases.map((purchase, index) => (
-                <View key={index} style={styles.purchaseItem}>
-                  <Image
-                    source={{ uri: purchase.image }}
-                    style={styles.purchaseImage}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.purchaseInfo}>
-                    <Text style={styles.purchaseTitle} numberOfLines={2}>
-                      {purchase.title}
-                    </Text>
-                    <Text style={styles.purchaseAuthor}>{purchase.author}</Text>
-                    <Text style={styles.purchasePrice}>
-                      {purchase.price.toLocaleString()}원 × {purchase.quantity}
-                    </Text>
-                    <Text style={styles.purchaseDate}>
-                      구매일:{" "}
-                      {new Date(purchase.date).toLocaleDateString("ko-KR")}
-                    </Text>
-                  </View>
-                </View>
-              ))
+            {isLoadingData ? (
+              <ActivityIndicator
+                size="large"
+                color={colors.primary[600]}
+                style={{ padding: spacing.xl }}
+              />
+            ) : purchases.length > 0 ? (
+              purchases.map((purchase, index) =>
+                renderPurchaseItem(purchase, index),
+              )
             ) : (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyText}>구매 내역이 없습니다.</Text>
@@ -262,6 +366,11 @@ const MyPageScreen = () => {
                       {new Date(review.date).toLocaleDateString("ko-KR")}
                     </Text>
                   </View>
+                  {review.bookTitle && (
+                    <Text style={styles.reviewBookTitle}>
+                      {review.bookTitle}
+                    </Text>
+                  )}
                   <Text style={styles.reviewText}>{review.text}</Text>
                 </View>
               ))
@@ -391,6 +500,12 @@ const styles = StyleSheet.create({
     color: colors.primary[600],
     marginBottom: spacing.xs,
   },
+  purchaseStatus: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.medium,
+    color: colors.primary[700],
+    marginBottom: spacing.xs,
+  },
   purchaseDate: {
     fontSize: fontSize.sm,
     color: colors.gray[500],
@@ -420,6 +535,12 @@ const styles = StyleSheet.create({
   reviewDate: {
     fontSize: fontSize.sm,
     color: colors.gray[500],
+  },
+  reviewBookTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.medium,
+    color: colors.primary[600],
+    marginBottom: spacing.xs,
   },
   reviewText: {
     fontSize: fontSize.base,

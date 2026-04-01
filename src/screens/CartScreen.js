@@ -13,6 +13,8 @@ import { Trash2, Plus, Minus, ShoppingBag } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCart } from "../contexts/CartContext";
 import { useAuth } from "../contexts/AuthContext";
+import { USE_MOCK_DATA } from "../api/config";
+import { orderApi } from "../api/orderApi";
 import Button from "../components/Button";
 import {
   colors,
@@ -30,6 +32,7 @@ const CartScreen = () => {
     updateQuantity,
     getTotalPrice,
     clearCart,
+    refreshCart,
   } = useCart();
   const { isAuthenticated, user } = useAuth();
 
@@ -58,29 +61,41 @@ const CartScreen = () => {
       {
         text: "구매",
         onPress: async () => {
-          // 구매 내역 저장
-          const purchases = cartItems.map((item) => ({
-            ...item,
-            date: new Date().toISOString(),
-          }));
-
           try {
-            const existingPurchases = await AsyncStorage.getItem(
-              `purchases_${user?.id}`
-            );
-            const parsedPurchases = existingPurchases
-              ? JSON.parse(existingPurchases)
-              : [];
-            await AsyncStorage.setItem(
-              `purchases_${user?.id}`,
-              JSON.stringify([...parsedPurchases, ...purchases])
-            );
+            if (USE_MOCK_DATA) {
+              // mock 모드: AsyncStorage에 구매 내역 저장
+              const purchases = cartItems.map((item) => ({
+                ...item,
+                date: new Date().toISOString(),
+              }));
+              const existingPurchases = await AsyncStorage.getItem(
+                `purchases_${user?.id}`,
+              );
+              const parsedPurchases = existingPurchases
+                ? JSON.parse(existingPurchases)
+                : [];
+              await AsyncStorage.setItem(
+                `purchases_${user?.id}`,
+                JSON.stringify([...parsedPurchases, ...purchases]),
+              );
+            } else {
+              // API 모드: 장바구니 기반 주문 생성
+              await orderApi.createOrder("CREDIT_CARD");
+            }
 
             Alert.alert("알림", "구매가 완료되었습니다!");
-            clearCart();
+            if (USE_MOCK_DATA) {
+              clearCart();
+            } else {
+              // 주문 후 장바구니 갱신 (서버에서 비워짐)
+              refreshCart();
+            }
             navigation.navigate("MyPage");
           } catch (error) {
-            Alert.alert("오류", "구매 처리 중 오류가 발생했습니다.");
+            Alert.alert(
+              "오류",
+              error.message || "구매 처리 중 오류가 발생했습니다.",
+            );
           }
         },
       },
@@ -116,60 +131,70 @@ const CartScreen = () => {
     );
   }
 
-  const renderCartItem = ({ item }) => (
-    <View style={styles.cartItem}>
-      <TouchableOpacity
-        onPress={() => navigation.navigate("BookDetail", { bookId: item.id })}
-      >
-        <Image
-          source={{ uri: item.image }}
-          style={styles.itemImage}
-          resizeMode="cover"
-        />
-      </TouchableOpacity>
-      <View style={styles.itemInfo}>
+  const renderCartItem = ({ item }) => {
+    // API 모드에서는 bookId로 상세 이동, mock 모드에서는 id 사용
+    const navigateBookId = item.bookId || item.id;
+    const imageUri = item.image || item.thumbnailUrl;
+
+    return (
+      <View style={styles.cartItem}>
         <TouchableOpacity
-          onPress={() => navigation.navigate("BookDetail", { bookId: item.id })}
+          onPress={() =>
+            navigation.navigate("BookDetail", { bookId: navigateBookId })
+          }
         >
-          <Text style={styles.itemTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.itemImage}
+            resizeMode="cover"
+          />
         </TouchableOpacity>
-        <Text style={styles.itemAuthor}>{item.author}</Text>
-        <Text style={styles.itemPrice}>{item.price.toLocaleString()}원</Text>
-
-        <View style={styles.itemActions}>
-          <View style={styles.quantityControls}>
-            <TouchableOpacity
-              onPress={() => updateQuantity(item.id, item.quantity - 1)}
-              style={styles.quantityButton}
-            >
-              <Minus size={16} color={colors.gray[700]} />
-            </TouchableOpacity>
-            <Text style={styles.quantityValue}>{item.quantity}</Text>
-            <TouchableOpacity
-              onPress={() => updateQuantity(item.id, item.quantity + 1)}
-              style={styles.quantityButton}
-            >
-              <Plus size={16} color={colors.gray[700]} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.itemRight}>
-            <Text style={styles.itemTotal}>
-              {(item.price * item.quantity).toLocaleString()}원
+        <View style={styles.itemInfo}>
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate("BookDetail", { bookId: navigateBookId })
+            }
+          >
+            <Text style={styles.itemTitle} numberOfLines={2}>
+              {item.title}
             </Text>
-            <TouchableOpacity
-              onPress={() => removeFromCart(item.id)}
-              style={styles.deleteButton}
-            >
-              <Trash2 size={20} color={colors.red[600]} />
-            </TouchableOpacity>
+          </TouchableOpacity>
+          <Text style={styles.itemAuthor}>{item.author}</Text>
+          <Text style={styles.itemPrice}>{item.price.toLocaleString()}원</Text>
+
+          <View style={styles.itemActions}>
+            <View style={styles.quantityControls}>
+              <TouchableOpacity
+                onPress={() => updateQuantity(item.id, item.quantity - 1)}
+                style={styles.quantityButton}
+              >
+                <Minus size={16} color={colors.gray[700]} />
+              </TouchableOpacity>
+              <Text style={styles.quantityValue}>{item.quantity}</Text>
+              <TouchableOpacity
+                onPress={() => updateQuantity(item.id, item.quantity + 1)}
+                style={styles.quantityButton}
+              >
+                <Plus size={16} color={colors.gray[700]} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.itemRight}>
+              <Text style={styles.itemTotal}>
+                {(item.price * item.quantity).toLocaleString()}원
+              </Text>
+              <TouchableOpacity
+                onPress={() => removeFromCart(item.id)}
+                style={styles.deleteButton}
+              >
+                <Trash2 size={20} color={colors.red[600]} />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>

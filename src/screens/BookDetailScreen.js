@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Alert,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import {
@@ -22,6 +23,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useBooks } from "../contexts/BookContext";
 import { useCart } from "../contexts/CartContext";
 import { useAuth } from "../contexts/AuthContext";
+import { USE_MOCK_DATA } from "../api/config";
+import { bookApi } from "../api/bookApi";
+import { reviewApi } from "../api/reviewApi";
 import Button from "../components/Button";
 import {
   colors,
@@ -41,28 +45,75 @@ const BookDetailScreen = () => {
   const { addToCart } = useCart();
   const { isAuthenticated, user } = useAuth();
 
+  const [book, setBook] = useState(null);
+  const [isLoadingBook, setIsLoadingBook] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [reviews, setReviews] = useState([]);
   const [reviewText, setReviewText] = useState("");
   const [rating, setRating] = useState(5);
   const [editingReviewId, setEditingReviewId] = useState(null);
 
-  const book = getBookById(bookId);
-
+  // 도서 정보 로딩
   useEffect(() => {
+    loadBook();
     loadReviews();
   }, [bookId]);
 
+  const loadBook = async () => {
+    try {
+      if (USE_MOCK_DATA) {
+        const mockBook = getBookById(bookId);
+        setBook(mockBook);
+      } else {
+        const data = await bookApi.getBookDetail(bookId);
+        // 백엔드 DTO → 모바일 필드 매핑
+        setBook({
+          ...data,
+          image: data.thumbnailUrl || (data.images && data.images[0]),
+          category: data.categoryName,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load book:", error);
+    } finally {
+      setIsLoadingBook(false);
+    }
+  };
+
   const loadReviews = async () => {
     try {
-      const savedReviews = await AsyncStorage.getItem(`reviews_${bookId}`);
-      if (savedReviews) {
-        setReviews(JSON.parse(savedReviews));
+      if (USE_MOCK_DATA) {
+        const savedReviews = await AsyncStorage.getItem(`reviews_${bookId}`);
+        if (savedReviews) {
+          setReviews(JSON.parse(savedReviews));
+        }
+      } else {
+        const data = await reviewApi.getReviews(bookId, 0, 100);
+        const reviewList = data.content || data;
+        // 백엔드 ReviewResponse → 모바일 리뷰 구조 매핑
+        setReviews(
+          (reviewList || []).map((r) => ({
+            id: r.id,
+            userId: r.userId,
+            userName: r.userName || r.username || "익명",
+            rating: r.rating,
+            text: r.content,
+            date: r.createdAt,
+          })),
+        );
       }
     } catch (error) {
       console.error("Failed to load reviews:", error);
     }
   };
+
+  if (isLoadingBook) {
+    return (
+      <View style={[styles.emptyContainer]}>
+        <ActivityIndicator size="large" color={colors.primary[600]} />
+      </View>
+    );
+  }
 
   if (!book) {
     return (
@@ -91,30 +142,54 @@ const BookDetailScreen = () => {
       return;
     }
 
-    const newReview = {
-      id: Date.now(),
-      userId: user?.id,
-      userName: user?.name,
-      rating,
-      text: reviewText,
-      date: new Date().toISOString(),
-    };
+    try {
+      if (USE_MOCK_DATA) {
+        const newReview = {
+          id: Date.now(),
+          userId: user?.id,
+          userName: user?.name,
+          rating,
+          text: reviewText,
+          date: new Date().toISOString(),
+        };
 
-    let updatedReviews;
-    if (editingReviewId) {
-      updatedReviews = reviews.map((r) =>
-        r.id === editingReviewId ? { ...newReview, id: editingReviewId } : r
-      );
-      setEditingReviewId(null);
-    } else {
-      updatedReviews = [...reviews, newReview];
+        let updatedReviews;
+        if (editingReviewId) {
+          updatedReviews = reviews.map((r) =>
+            r.id === editingReviewId
+              ? { ...newReview, id: editingReviewId }
+              : r,
+          );
+          setEditingReviewId(null);
+        } else {
+          updatedReviews = [...reviews, newReview];
+        }
+
+        setReviews(updatedReviews);
+        await AsyncStorage.setItem(
+          `reviews_${bookId}`,
+          JSON.stringify(updatedReviews),
+        );
+      } else {
+        if (editingReviewId) {
+          await reviewApi.updateReview(editingReviewId, {
+            rating,
+            content: reviewText,
+          });
+          setEditingReviewId(null);
+        } else {
+          await reviewApi.createReview(bookId, {
+            rating,
+            content: reviewText,
+          });
+        }
+        // 리뷰 목록 새로고침
+        await loadReviews();
+      }
+    } catch (error) {
+      Alert.alert("오류", error.message || "리뷰 등록에 실패했습니다.");
     }
 
-    setReviews(updatedReviews);
-    await AsyncStorage.setItem(
-      `reviews_${bookId}`,
-      JSON.stringify(updatedReviews)
-    );
     setReviewText("");
     setRating(5);
   };
@@ -133,12 +208,21 @@ const BookDetailScreen = () => {
         text: "삭제",
         style: "destructive",
         onPress: async () => {
-          const updatedReviews = reviews.filter((r) => r.id !== reviewId);
-          setReviews(updatedReviews);
-          await AsyncStorage.setItem(
-            `reviews_${bookId}`,
-            JSON.stringify(updatedReviews)
-          );
+          try {
+            if (USE_MOCK_DATA) {
+              const updatedReviews = reviews.filter((r) => r.id !== reviewId);
+              setReviews(updatedReviews);
+              await AsyncStorage.setItem(
+                `reviews_${bookId}`,
+                JSON.stringify(updatedReviews),
+              );
+            } else {
+              await reviewApi.deleteReview(reviewId);
+              await loadReviews();
+            }
+          } catch (error) {
+            Alert.alert("오류", "리뷰 삭제에 실패했습니다.");
+          }
         },
       },
     ]);
@@ -192,20 +276,36 @@ const BookDetailScreen = () => {
           </View>
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>카테고리:</Text>
-            <Text style={styles.metaValue}>{book.category}</Text>
+            <Text style={styles.metaValue}>
+              {book.category || book.categoryName}
+            </Text>
           </View>
-          <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>ISBN:</Text>
-            <Text style={styles.metaValue}>{book.isbn}</Text>
-          </View>
-          <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>출간일:</Text>
-            <Text style={styles.metaValue}>{book.publishDate}</Text>
-          </View>
-          <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>재고:</Text>
-            <Text style={styles.metaValue}>{book.stock}권</Text>
-          </View>
+          {book.isbn && (
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>ISBN:</Text>
+              <Text style={styles.metaValue}>{book.isbn}</Text>
+            </View>
+          )}
+          {book.publishDate && (
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>출간일:</Text>
+              <Text style={styles.metaValue}>{book.publishDate}</Text>
+            </View>
+          )}
+          {book.stock !== undefined && (
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>재고:</Text>
+              <Text style={styles.metaValue}>{book.stock}권</Text>
+            </View>
+          )}
+          {book.ratingAvg !== undefined && (
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>평점:</Text>
+              <Text style={styles.metaValue}>
+                ★ {book.ratingAvg.toFixed(1)} ({book.reviewCount}개 리뷰)
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.priceSection}>
@@ -222,7 +322,9 @@ const BookDetailScreen = () => {
               </TouchableOpacity>
               <Text style={styles.quantityValue}>{quantity}</Text>
               <TouchableOpacity
-                onPress={() => setQuantity(Math.min(book.stock, quantity + 1))}
+                onPress={() =>
+                  setQuantity(Math.min(book.stock || 99, quantity + 1))
+                }
                 style={styles.quantityButton}
               >
                 <Text style={styles.quantityButtonText}>+</Text>

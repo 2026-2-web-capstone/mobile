@@ -42,7 +42,7 @@ const BookCard = ({ book, style }) => {
     >
       <View style={styles.imageContainer}>
         <Image
-          source={{ uri: book.image }}
+          source={{ uri: book.image || book.thumbnailUrl }}
           style={styles.image}
           resizeMode="cover"
           defaultSource={require("../../assets/icon.png")}

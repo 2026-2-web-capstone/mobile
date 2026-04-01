@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import {
@@ -17,6 +18,8 @@ import {
 } from "lucide-react-native";
 import BookCard from "../components/BookCard";
 import { useBooks } from "../contexts/BookContext";
+import { USE_MOCK_DATA } from "../api/config";
+import { bookApi } from "../api/bookApi";
 import {
   colors,
   borderRadius,
@@ -30,9 +33,40 @@ const { width } = Dimensions.get("window");
 const HomeScreen = () => {
   const navigation = useNavigation();
   const { books, getNewBooks, getPopularBooks } = useBooks();
-  const newBooks = getNewBooks();
-  const popularBooks = getPopularBooks();
-  const allBooks = books.slice(0, 8);
+
+  const [newBooks, setNewBooks] = useState([]);
+  const [popularBooks, setPopularBooks] = useState([]);
+  const [allBooks, setAllBooks] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadHomeData();
+  }, [books]);
+
+  const loadHomeData = async () => {
+    if (USE_MOCK_DATA) {
+      setNewBooks(getNewBooks().slice(0, 5));
+      setPopularBooks(getPopularBooks());
+      setAllBooks(books.slice(0, 8));
+      setIsLoading(false);
+      return;
+    }
+
+    // API 모드: /api/v1/home 에서 신간/인기 도서를 한 번에 받아옴
+    try {
+      setIsLoading(true);
+      const homeData = await bookApi.getHome();
+      setNewBooks(homeData.newBooks || []);
+      setPopularBooks(homeData.popularBooks || []);
+      // 전체 도서는 별도 요청
+      const booksData = await bookApi.getBooks(0, 8);
+      setAllBooks(booksData.content || booksData);
+    } catch (error) {
+      console.error("Failed to load home data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const renderHorizontalBookList = (data, title, icon, filterType) => (
     <View style={styles.section}>
@@ -66,6 +100,19 @@ const HomeScreen = () => {
     </View>
   );
 
+  if (isLoading) {
+    return (
+      <View
+        style={[
+          styles.container,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
+        <ActivityIndicator size="large" color={colors.primary[600]} />
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Hero Section */}
@@ -92,7 +139,7 @@ const HomeScreen = () => {
         newBooks.slice(0, 5),
         "신간 도서",
         <Sparkles size={24} color={colors.primary[600]} />,
-        "new"
+        "new",
       )}
 
       {/* 인기 도서 */}
@@ -100,7 +147,7 @@ const HomeScreen = () => {
         popularBooks,
         "인기 도서",
         <TrendingUp size={24} color={colors.primary[600]} />,
-        "popular"
+        "popular",
       )}
 
       {/* 전체 도서 */}

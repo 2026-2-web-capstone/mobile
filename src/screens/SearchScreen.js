@@ -1,74 +1,106 @@
-import React, { useEffect } from "react";
-import { View, Text, TextInput, FlatList, StyleSheet } from "react-native";
-import { useRoute } from "@react-navigation/native";
+import React, { useState, useCallback } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+} from "react-native";
 import { Search } from "lucide-react-native";
 import BookCard from "../components/BookCard";
 import { useBooks } from "../contexts/BookContext";
-import { colors, borderRadius, fontSize, spacing } from "../theme/colors";
+import { USE_MOCK_DATA } from "../api/config";
+import { bookApi } from "../api/bookApi";
+import {
+  colors,
+  borderRadius,
+  fontSize,
+  fontWeight,
+  spacing,
+} from "../theme/colors";
 
 const SearchScreen = () => {
-  const route = useRoute();
-  const initialQuery = route.params?.query || "";
-  const { getFilteredBooks, searchQuery, setSearchQuery } = useBooks();
+  const { books, searchQuery, setSearchQuery, getFilteredBooks } = useBooks();
+  const [localQuery, setLocalQuery] = useState(searchQuery || "");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
-  useEffect(() => {
-    if (initialQuery) {
-      setSearchQuery(initialQuery);
-    }
-  }, [initialQuery]);
+  const handleSearch = useCallback(
+    async (text) => {
+      setLocalQuery(text);
 
-  const filteredBooks = getFilteredBooks();
+      if (USE_MOCK_DATA) {
+        setSearchQuery(text);
+        return;
+      }
 
-  const renderBookItem = ({ item, index }) => (
-    <View
-      style={[
-        styles.bookItem,
-        index % 2 === 0 ? styles.bookItemLeft : styles.bookItemRight,
-      ]}
-    >
-      <BookCard book={item} />
-    </View>
+      // API 모드: 서버 검색 (디바운스 없이 즉시)
+      if (!text.trim()) {
+        setSearchResults([]);
+        setHasSearched(false);
+        return;
+      }
+
+      setIsSearching(true);
+      setHasSearched(true);
+      try {
+        const data = await bookApi.searchBooks(text, 0, 50);
+        setSearchResults(data.content || data || []);
+      } catch (error) {
+        console.error("Search failed:", error);
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [setSearchQuery],
   );
+
+  const displayedBooks = USE_MOCK_DATA ? getFilteredBooks() : searchResults;
+  const showResults = USE_MOCK_DATA ? localQuery.length > 0 : hasSearched;
 
   return (
     <View style={styles.container}>
-      {/* 검색 입력 */}
       <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
+        <View style={styles.searchBox}>
           <Search size={20} color={colors.gray[400]} />
           <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="도서명 또는 저자명으로 검색..."
-            placeholderTextColor={colors.gray[400]}
+            value={localQuery}
+            onChangeText={handleSearch}
+            placeholder="도서 제목, 저자로 검색"
             style={styles.searchInput}
             autoFocus
+            returnKeyType="search"
           />
         </View>
       </View>
 
-      {/* 검색 결과 */}
-      {searchQuery ? (
-        <View style={styles.resultHeader}>
-          <Text style={styles.resultTitle}>검색 결과: "{searchQuery}"</Text>
-          <Text style={styles.resultCount}>{filteredBooks.length}건</Text>
+      {isSearching ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={colors.primary[600]} />
         </View>
-      ) : null}
-
-      {filteredBooks.length > 0 ? (
-        <FlatList
-          data={filteredBooks}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderBookItem}
-          numColumns={2}
-          contentContainerStyle={styles.bookList}
-          showsVerticalScrollIndicator={false}
-        />
+      ) : showResults ? (
+        displayedBooks.length > 0 ? (
+          <FlatList
+            data={displayedBooks}
+            keyExtractor={(item) => item.id.toString()}
+            numColumns={2}
+            columnWrapperStyle={styles.row}
+            renderItem={({ item }) => <BookCard book={item} />}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        ) : (
+          <View style={styles.centerContainer}>
+            <Text style={styles.noResultTitle}>검색 결과 없음</Text>
+            <Text style={styles.noResultText}>다른 검색어로 시도해보세요.</Text>
+          </View>
+        )
       ) : (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>
-            {searchQuery ? "검색 결과가 없습니다." : "검색어를 입력해주세요."}
-          </Text>
+        <View style={styles.centerContainer}>
+          <Search size={64} color={colors.gray[300]} />
+          <Text style={styles.hintText}>검색어를 입력해주세요</Text>
         </View>
       )}
     </View>
@@ -81,63 +113,51 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gray[50],
   },
   searchContainer: {
-    backgroundColor: colors.white,
     padding: spacing.lg,
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.gray[200],
   },
-  searchInputContainer: {
+  searchBox: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.gray[100],
-    paddingHorizontal: spacing.md,
     borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    height: 44,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
+    marginLeft: spacing.sm,
     fontSize: fontSize.base,
     color: colors.gray[900],
   },
-  resultHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  resultTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: "600",
-    color: colors.gray[900],
-  },
-  resultCount: {
-    fontSize: fontSize.sm,
-    color: colors.gray[500],
-  },
-  bookList: {
-    padding: spacing.lg,
-  },
-  bookItem: {
-    flex: 1,
-    maxWidth: "50%",
-  },
-  bookItemLeft: {
-    paddingRight: spacing.sm,
-  },
-  bookItemRight: {
-    paddingLeft: spacing.sm,
-  },
-  emptyContainer: {
+  centerContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: spacing.xxl * 2,
+    padding: spacing.xl,
   },
-  emptyText: {
-    fontSize: fontSize.lg,
+  noResultTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.bold,
+    color: colors.gray[900],
+    marginBottom: spacing.sm,
+  },
+  noResultText: {
+    fontSize: fontSize.base,
     color: colors.gray[500],
+  },
+  hintText: {
+    fontSize: fontSize.base,
+    color: colors.gray[400],
+    marginTop: spacing.lg,
+  },
+  listContent: {
+    padding: spacing.lg,
+  },
+  row: {
+    justifyContent: "space-between",
   },
 });
 

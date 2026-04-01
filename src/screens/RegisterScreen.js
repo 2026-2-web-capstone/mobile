@@ -39,11 +39,18 @@ const RegisterScreen = () => {
     setLoading(true);
     setError("");
     try {
-      const result = await registerUser(data.email, data.password, data.name);
+      // 백엔드 UserSignupRequest: email, username, password, name, phone
+      const result = await registerUser(
+        data.email,
+        data.password,
+        data.name,
+        data.username,
+        data.phone,
+      );
       if (result.success) {
         navigation.navigate("Home");
       } else {
-        setError("회원가입에 실패했습니다.");
+        setError(result.message || "회원가입에 실패했습니다.");
       }
     } catch (err) {
       setError("회원가입 중 오류가 발생했습니다.");
@@ -90,6 +97,29 @@ const RegisterScreen = () => {
 
           <Controller
             control={control}
+            name="username"
+            rules={{
+              required: "사용자명을 입력해주세요.",
+              minLength: {
+                value: 3,
+                message: "사용자명은 최소 3자 이상이어야 합니다.",
+              },
+            }}
+            render={({ field: { onChange, onBlur, value } }) => (
+              <Input
+                label="사용자명"
+                placeholder="사용자명을 입력하세요"
+                autoCapitalize="none"
+                onBlur={onBlur}
+                onChangeText={onChange}
+                value={value}
+                error={errors.username?.message}
+              />
+            )}
+          />
+
+          <Controller
+            control={control}
             name="email"
             rules={{
               required: "이메일을 입력해주세요.",
@@ -108,6 +138,29 @@ const RegisterScreen = () => {
                 onChangeText={onChange}
                 value={value}
                 error={errors.email?.message}
+              />
+            )}
+          />
+
+          <Controller
+            control={control}
+            name="phone"
+            rules={{
+              required: "전화번호를 입력해주세요.",
+              pattern: {
+                value: /^01[0-9]-?[0-9]{3,4}-?[0-9]{4}$/,
+                message: "올바른 전화번호 형식이 아닙니다.",
+              },
+            }}
+            render={({ field: { onChange, onBlur, value } }) => (
+              <Input
+                label="전화번호"
+                placeholder="010-1234-5678"
+                keyboardType="phone-pad"
+                onBlur={onBlur}
+                onChangeText={onChange}
+                value={value}
+                error={errors.phone?.message}
               />
             )}
           />

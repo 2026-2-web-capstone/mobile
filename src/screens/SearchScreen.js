@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -26,6 +26,15 @@ const SearchScreen = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+
+  // 컴포넌트 언마운트 시 전역 검색어 초기화 (목데이터 환경 등에서 도서 목록 화면 오염 방지)
+  useEffect(() => {
+    return () => {
+      if (USE_MOCK_DATA && setSearchQuery) {
+        setSearchQuery("");
+      }
+    };
+  }, [setSearchQuery]);
 
   const handleSearch = useCallback(
     async (text) => {

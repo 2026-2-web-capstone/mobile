@@ -101,18 +101,34 @@ const TabNavigator = () => {
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{
+        options={({ navigation }) => ({
           title: "홈",
           headerTitle: "도서 쇼핑몰",
-        }}
+          headerRight: () => (
+            <TouchableOpacity 
+              onPress={() => navigation.navigate("Search")}
+              style={{ marginRight: spacing.lg }}
+            >
+              <Search size={24} color={colors.gray[600]} />
+            </TouchableOpacity>
+          ),
+        })}
       />
       <Tab.Screen
         name="Books"
         component={BookListScreen}
-        options={{
+        options={({ navigation }) => ({
           title: "도서",
           headerTitle: "도서 목록",
-        }}
+          headerRight: () => (
+            <TouchableOpacity 
+              onPress={() => navigation.navigate("Search")}
+              style={{ marginRight: spacing.lg }}
+            >
+              <Search size={24} color={colors.gray[600]} />
+            </TouchableOpacity>
+          ),
+        })}
       />
       <Tab.Screen
         name="Cart"
@@ -200,10 +216,7 @@ const AppNavigator = () => {
         <Stack.Screen
           name="Search"
           component={SearchScreen}
-          options={{
-            title: "검색",
-            headerRight: () => <Search size={24} color={colors.gray[600]} />,
-          }}
+          options={{ title: "검색" }}
         />
       </Stack.Navigator>
     </NavigationContainer>

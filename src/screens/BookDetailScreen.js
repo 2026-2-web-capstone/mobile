@@ -126,6 +126,7 @@ const BookDetailScreen = () => {
   const handleAddToCart = () => {
     addToCart(book, quantity);
     Alert.alert("알림", "장바구니에 추가되었습니다!");
+    navigation.goBack();
   };
 
   const handleSubmitReview = async () => {
@@ -354,10 +355,12 @@ const BookDetailScreen = () => {
           <Text style={styles.sectionTitle}>리뷰 ({reviews.length})</Text>
         </View>
 
-        {/* 리뷰 작성 */}
-        {isAuthenticated && !userReview && (
+        {/* 리뷰 작성 및 수정 */}
+        {isAuthenticated && (!userReview || editingReviewId) && (
           <View style={styles.reviewForm}>
-            <Text style={styles.reviewFormLabel}>평점</Text>
+            <Text style={styles.reviewFormLabel}>
+              {editingReviewId ? "리뷰 수정" : "리뷰 작성"}
+            </Text>
             {renderStars(rating, true)}
             <TextInput
               value={reviewText}
@@ -368,9 +371,31 @@ const BookDetailScreen = () => {
               numberOfLines={4}
               textAlignVertical="top"
             />
-            <Button onPress={handleSubmitReview}>
-              {editingReviewId ? "리뷰 수정" : "리뷰 등록"}
-            </Button>
+            <View style={styles.reviewFormButtons}>
+              {editingReviewId && (
+                <Button
+                  variant="secondary"
+                  onPress={() => {
+                    setEditingReviewId(null);
+                    setReviewText("");
+                    setRating(5);
+                  }}
+                  style={styles.cancelButton}
+                >
+                  취소
+                </Button>
+              )}
+              <Button
+                onPress={handleSubmitReview}
+                style={
+                  editingReviewId
+                    ? styles.submitButtonHalf
+                    : styles.submitButtonFull
+                }
+              >
+                {editingReviewId ? "수정 완료" : "리뷰 등록"}
+              </Button>
+            </View>
           </View>
         )}
 

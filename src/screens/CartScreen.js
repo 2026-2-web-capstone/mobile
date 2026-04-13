@@ -36,21 +36,18 @@ const CartScreen = () => {
   } = useCart();
   const { isAuthenticated, user } = useAuth();
 
-  if (!isAuthenticated) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>로그인이 필요합니다.</Text>
-        <Button
-          onPress={() => navigation.navigate("Login")}
-          style={styles.loginButton}
-        >
-          로그인하기
-        </Button>
-      </View>
-    );
-  }
-
   const handleCheckout = async () => {
+    if (!isAuthenticated) {
+      Alert.alert("로그인 필요", "구매를 위해 로그인이 필요합니다.", [
+        { text: "취소" },
+        {
+          text: "로그인",
+          onPress: () => navigation.navigate("Login"),
+        },
+      ]);
+      return;
+    }
+
     if (cartItems.length === 0) {
       Alert.alert("알림", "장바구니가 비어있습니다.");
       return;
@@ -66,19 +63,20 @@ const CartScreen = () => {
               // mock 모드: AsyncStorage에 구매 내역 저장
               const purchases = cartItems.map((item) => ({
                 ...item,
+                image: item.image || item.thumbnailUrl, // 이미지 필드명 통일
                 date: new Date().toISOString(),
               }));
-              const existingPurchases = await AsyncStorage.getItem(
-                `purchases_${user?.id}`,
-              );
+              const storageKey = `purchases_${user?.id || "guest"}`;
+              const existingPurchases = await AsyncStorage.getItem(storageKey);
               const parsedPurchases = existingPurchases
                 ? JSON.parse(existingPurchases)
                 : [];
               await AsyncStorage.setItem(
-                `purchases_${user?.id}`,
-                JSON.stringify([...parsedPurchases, ...purchases]),
+                storageKey,
+                JSON.stringify([...purchases, ...parsedPurchases]), // 최신 구매가 위로 오게 함
               );
-            } else {
+            }
+ else {
               // API 모드: 장바구니 기반 주문 생성
               await orderApi.createOrder("CREDIT_CARD");
             }

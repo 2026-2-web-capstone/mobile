@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useForm, Controller } from "react-hook-form";
 import {
   User,
@@ -47,29 +47,26 @@ const MyPageScreen = () => {
     setValue,
   } = useForm();
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigation.navigate("Login");
-      return;
-    }
+  // 화면 포커스 시 데이터 로드 (구매 후 이동 시 반영을 위함)
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthenticated && user) {
+        loadPurchases();
+        loadReviews();
 
-    if (user) {
-      setValue("name", user.name);
-      setValue("email", user.email);
-      setValue("phone", user.phone || "");
-    }
-
-    loadPurchases();
-    loadReviews();
-  }, [user, isAuthenticated]);
+        setValue("name", user.name);
+        setValue("email", user.email);
+        setValue("phone", user.phone || "");
+      }
+    }, [isAuthenticated, user, setValue]),
+  );
 
   const loadPurchases = async () => {
     setIsLoadingData(true);
     try {
       if (USE_MOCK_DATA) {
-        const savedPurchases = await AsyncStorage.getItem(
-          `purchases_${user?.id}`,
-        );
+        const storageKey = `purchases_${user?.id || "guest"}`;
+        const savedPurchases = await AsyncStorage.getItem(storageKey);
         if (savedPurchases) {
           setPurchases(JSON.parse(savedPurchases));
         }
@@ -167,7 +164,21 @@ const MyPageScreen = () => {
   };
 
   if (!isAuthenticated || !user) {
-    return null;
+    return (
+      <View style={styles.emptyContainer}>
+        <User size={64} color={colors.gray[400]} />
+        <Text style={styles.emptyTitle}>로그인이 필요합니다</Text>
+        <Text style={styles.emptyText}>
+          마이페이지를 이용하시려면 로그인이 필요합니다.
+        </Text>
+        <Button
+          onPress={() => navigation.navigate("Login")}
+          style={styles.loginButton}
+        >
+          로그인하기
+        </Button>
+      </View>
+    );
   }
 
   const tabs = [
@@ -215,7 +226,6 @@ const MyPageScreen = () => {
       );
     }
 
-    // API 모드: 주문 정보 표시
     return (
       <View key={purchase.id} style={styles.purchaseItem}>
         {purchase.image && (
@@ -243,7 +253,6 @@ const MyPageScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* 탭 메뉴 */}
       <View style={styles.tabContainer}>
         <ScrollView
           horizontal
@@ -279,7 +288,6 @@ const MyPageScreen = () => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* 내 정보 */}
         {activeTab === "profile" && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>내 정보 조회/수정</Text>
@@ -331,7 +339,6 @@ const MyPageScreen = () => {
           </View>
         )}
 
-        {/* 구매 목록 */}
         {activeTab === "purchases" && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>구매 목록</Text>
@@ -347,13 +354,12 @@ const MyPageScreen = () => {
               )
             ) : (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>구매 내역이 없습니다.</Text>
+                <Text style={styles.tabEmptyText}>구매 내역이 없습니다.</Text>
               </View>
             )}
           </View>
         )}
 
-        {/* 내가 쓴 댓글 */}
         {activeTab === "reviews" && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>내가 쓴 댓글</Text>
@@ -376,13 +382,12 @@ const MyPageScreen = () => {
               ))
             ) : (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>작성한 댓글이 없습니다.</Text>
+                <Text style={styles.tabEmptyText}>작성한 댓글이 없습니다.</Text>
               </View>
             )}
           </View>
         )}
 
-        {/* 설정 */}
         {activeTab === "settings" && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>설정</Text>
@@ -414,6 +419,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.gray[50],
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+  },
+  emptyTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.bold,
+    color: colors.gray[900],
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  emptyText: {
+    fontSize: fontSize.base,
+    color: colors.gray[500],
+    marginBottom: spacing.xl,
+    textAlign: "center",
+  },
+  loginButton: {
+    paddingHorizontal: spacing.xxl,
   },
   tabContainer: {
     backgroundColor: colors.white,
@@ -551,7 +578,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xxl,
     alignItems: "center",
   },
-  emptyText: {
+  tabEmptyText: {
     fontSize: fontSize.base,
     color: colors.gray[500],
   },

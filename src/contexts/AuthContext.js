@@ -1,9 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { USE_MOCK_DATA } from "../api/config";
+import { ALLOW_OFFLINE_FALLBACK, USE_MOCK_DATA } from "../api/config";
 import { authApi } from "../api/authApi";
 
 const AuthContext = createContext();
+
+const createLocalUser = ({ email, name, username, id = Date.now() }) => ({
+  id,
+  email,
+  name: name || email.split("@")[0],
+  username: username || email.split("@")[0],
+  role: email === "admin@example.com" ? "ADMIN" : "USER",
+});
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -32,6 +40,11 @@ export const AuthProvider = ({ children }) => {
           if (token) {
             const userData = await authApi.getMe();
             setUser(userData);
+          } else if (ALLOW_OFFLINE_FALLBACK) {
+            const savedUser = await AsyncStorage.getItem("user");
+            if (savedUser) {
+              setUser(JSON.parse(savedUser));
+            }
           }
         }
       } catch (error) {
@@ -48,18 +61,15 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
+    const saveLocalUser = async (nextUser) => {
+      setUser(nextUser);
+      await AsyncStorage.setItem("user", JSON.stringify(nextUser));
+      return { success: true, user: nextUser };
+    };
+
     if (USE_MOCK_DATA) {
       // ── mock 로그인 ──
-      const mockUser = {
-        id: 1,
-        email,
-        name: email.split("@")[0],
-        username: email.split("@")[0],
-        role: email === "admin@example.com" ? "ADMIN" : "USER",
-      };
-      setUser(mockUser);
-      await AsyncStorage.setItem("user", JSON.stringify(mockUser));
-      return { success: true, user: mockUser };
+      return saveLocalUser(createLocalUser({ email, id: 1 }));
     }
 
     // ── API 로그인 ──
@@ -71,23 +81,24 @@ export const AuthProvider = ({ children }) => {
       setUser(data.user);
       return { success: true, user: data.user };
     } catch (error) {
+      if (ALLOW_OFFLINE_FALLBACK) {
+        console.warn("Signin API failed. Using offline fallback:", error);
+        return saveLocalUser(createLocalUser({ email }));
+      }
       return { success: false, message: error.message };
     }
   };
 
   const register = async (email, password, name, username, phone) => {
+    const saveLocalUser = async (nextUser) => {
+      setUser(nextUser);
+      await AsyncStorage.setItem("user", JSON.stringify(nextUser));
+      return { success: true, user: nextUser };
+    };
+
     if (USE_MOCK_DATA) {
       // ── mock 회원가입 ──
-      const newUser = {
-        id: Date.now(),
-        email,
-        name,
-        username: username || email.split("@")[0],
-        role: "USER",
-      };
-      setUser(newUser);
-      await AsyncStorage.setItem("user", JSON.stringify(newUser));
-      return { success: true, user: newUser };
+      return saveLocalUser(createLocalUser({ email, name, username }));
     }
 
     // ── API 회원가입 → 자동 로그인 ──
@@ -96,6 +107,10 @@ export const AuthProvider = ({ children }) => {
       // 가입 성공 후 자동 로그인
       return await login(email, password);
     } catch (error) {
+      if (ALLOW_OFFLINE_FALLBACK) {
+        console.warn("Signup API failed. Using offline fallback:", error);
+        return saveLocalUser(createLocalUser({ email, name, username }));
+      }
       return { success: false, message: error.message };
     }
   };

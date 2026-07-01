@@ -12,6 +12,7 @@ import BookCard from "../components/BookCard";
 import { useBooks } from "../contexts/BookContext";
 import { USE_MOCK_DATA } from "../api/config";
 import { bookApi } from "../api/bookApi";
+import { mockBooks } from "../utils/mockData";
 import {
   colors,
   borderRadius,
@@ -59,6 +60,14 @@ const SearchScreen = () => {
         setSearchResults(data.content || data || []);
       } catch (error) {
         console.error("Search failed:", error);
+        const normalizedText = text.toLowerCase();
+        setSearchResults(
+          mockBooks.filter(
+            (book) =>
+              book.title.toLowerCase().includes(normalizedText) ||
+              book.author.toLowerCase().includes(normalizedText),
+          ),
+        );
       } finally {
         setIsSearching(false);
       }

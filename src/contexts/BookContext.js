@@ -11,6 +11,23 @@ import { mockBooks, categories as mockCategories } from "../utils/mockData";
 
 const BookContext = createContext();
 
+const normalizeBookList = (data) => {
+  if (Array.isArray(data?.content)) return data.content;
+  if (Array.isArray(data)) return data;
+  return [];
+};
+
+const getCategoryName = (category) =>
+  typeof category === "string" ? category : category?.name || "전체";
+
+const getBookCategoryName = (book) => book.category || book.categoryName;
+
+const getMockBooksForCategory = (category) => {
+  const categoryName = getCategoryName(category);
+  if (categoryName === "전체") return mockBooks;
+  return mockBooks.filter((book) => getBookCategoryName(book) === categoryName);
+};
+
 export const useBooks = () => {
   const context = useContext(BookContext);
   if (!context) {
@@ -43,7 +60,7 @@ export const BookProvider = ({ children }) => {
         bookApi.getCategories(),
       ]);
       // booksData는 Page 객체이므로 content를 추출
-      setBooks(booksData.content || booksData);
+      setBooks(normalizeBookList(booksData));
       // 카테고리 목록 앞에 "전체" 추가
       const categoryNames = (categoriesData || []).map((c) => ({
         id: c.id,
@@ -52,6 +69,8 @@ export const BookProvider = ({ children }) => {
       setCategories([{ id: null, name: "전체" }, ...categoryNames]);
     } catch (error) {
       console.error("Failed to load initial data:", error);
+      setBooks(mockBooks);
+      setCategories(mockCategories);
     } finally {
       setIsLoading(false);
     }
@@ -59,63 +78,54 @@ export const BookProvider = ({ children }) => {
 
   // ── 필터링된 도서 목록 ──
   const getFilteredBooks = useCallback(() => {
-    if (USE_MOCK_DATA) {
-      let filtered = books;
-      if (selectedCategory !== "전체") {
-        filtered = filtered.filter(
-          (book) => book.category === selectedCategory,
-        );
-      }
-      if (searchQuery) {
-        filtered = filtered.filter(
-          (book) =>
-            book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            book.author.toLowerCase().includes(searchQuery.toLowerCase()),
-        );
-      }
-      return filtered;
+    let filtered = books.length > 0 ? books : mockBooks;
+    if (selectedCategory !== "전체") {
+      filtered = filtered.filter(
+        (book) => getBookCategoryName(book) === selectedCategory,
+      );
     }
-    // API 모드에서는 books 상태를 그대로 반환 (서버에서 필터링)
-    return books;
+    if (searchQuery) {
+      filtered = filtered.filter(
+        (book) =>
+          book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          book.author.toLowerCase().includes(searchQuery.toLowerCase()),
+      );
+    }
+    return filtered;
   }, [books, selectedCategory, searchQuery]);
 
   // ── 카테고리 선택 시 서버 조회 (API 모드) ──
   const handleCategoryChange = useCallback(
     async (category) => {
+      const categoryName = getCategoryName(category);
+      setSelectedCategory(categoryName);
+
       if (USE_MOCK_DATA) {
-        setSelectedCategory(
-          typeof category === "string" ? category : category.name,
-        );
         return;
       }
 
-      const categoryObj =
-        typeof category === "string"
-          ? categories.find((c) => c.name === category)
-          : category;
-      setSelectedCategory(categoryObj?.name || "전체");
+      const categoryObj = categories.find(
+        (item) => getCategoryName(item) === categoryName,
+      );
+      const categoryId =
+        categoryObj && typeof categoryObj === "object" ? categoryObj.id : null;
 
-      if (!categoryObj || categoryObj.id === null) {
-        // "전체" 선택
-        setIsLoading(true);
-        try {
+      setIsLoading(true);
+      try {
+        if (categoryName === "전체") {
           const data = await bookApi.getBooks(0, 100);
-          setBooks(data.content || data);
-        } catch (error) {
-          console.error("Failed to load books:", error);
-        } finally {
-          setIsLoading(false);
+          setBooks(normalizeBookList(data));
+        } else if (categoryId != null) {
+          const data = await bookApi.getBooksByCategory(categoryId, 0, 100);
+          setBooks(normalizeBookList(data));
+        } else {
+          setBooks(getMockBooksForCategory(categoryName));
         }
-      } else {
-        setIsLoading(true);
-        try {
-          const data = await bookApi.getBooksByCategory(categoryObj.id, 0, 100);
-          setBooks(data.content || data);
-        } catch (error) {
-          console.error("Failed to load category books:", error);
-        } finally {
-          setIsLoading(false);
-        }
+      } catch (error) {
+        console.error("Failed to load category books:", error);
+        setBooks(getMockBooksForCategory(categoryName));
+      } finally {
+        setIsLoading(false);
       }
     },
     [categories],
@@ -124,33 +134,29 @@ export const BookProvider = ({ children }) => {
   // ── ID로 도서 조회 ──
   const getBookById = useCallback(
     (id) => {
-      if (USE_MOCK_DATA) {
-        return books.find((book) => book.id === parseInt(id));
-      }
-      // API 모드에서는 null 반환 → 스크린에서 별도 API 호출
-      return null;
+      const sourceBooks = books.length > 0 ? books : mockBooks;
+      return sourceBooks.find((book) => String(book.id) === String(id));
     },
     [books],
   );
 
   // ── 신간 도서 ──
   const getNewBooks = useCallback(() => {
-    if (USE_MOCK_DATA) {
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-      return books.filter(
-        (book) => new Date(book.publishDate) >= threeMonthsAgo,
-      );
-    }
-    return [];
+    const sourceBooks = books.length > 0 ? books : mockBooks;
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const recentBooks = sourceBooks.filter(
+      (book) => book.publishDate && new Date(book.publishDate) >= threeMonthsAgo,
+    );
+    return recentBooks.length > 0 ? recentBooks : sourceBooks.slice(0, 5);
   }, [books]);
 
   // ── 인기 도서 ──
   const getPopularBooks = useCallback(() => {
-    if (USE_MOCK_DATA) {
-      return [...books].sort((a, b) => a.stock - b.stock).slice(0, 5);
-    }
-    return [];
+    const sourceBooks = books.length > 0 ? books : mockBooks;
+    return [...sourceBooks]
+      .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0))
+      .slice(0, 5);
   }, [books]);
 
   // ── 검색 (API 모드) ──
@@ -167,9 +173,17 @@ export const BookProvider = ({ children }) => {
     setIsLoading(true);
     try {
       const data = await bookApi.searchBooks(keyword, 0, 100);
-      setBooks(data.content || data);
+      setBooks(normalizeBookList(data));
     } catch (error) {
       console.error("Failed to search:", error);
+      const normalizedKeyword = keyword.toLowerCase();
+      setBooks(
+        mockBooks.filter(
+          (book) =>
+            book.title.toLowerCase().includes(normalizedKeyword) ||
+            book.author.toLowerCase().includes(normalizedKeyword),
+        ),
+      );
     } finally {
       setIsLoading(false);
     }

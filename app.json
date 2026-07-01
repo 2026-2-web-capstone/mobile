@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "book-store",
+    "slug": "book-store",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -17,6 +17,8 @@
       "bundleIdentifier": "com.9hkmo.web-capstone-ios",
       "buildNumber": "1.0.0",
       "infoPlist": {
+        "CFBundleDisplayName": "book-store",
+        "CFBundleName": "book-store",
         "ITSAppUsesNonExemptEncryption": false
       }
     },

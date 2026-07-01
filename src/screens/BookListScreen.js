@@ -67,6 +67,13 @@ const BookListScreen = () => {
       setDisplayBooks(data.content || data || []);
     } catch (error) {
       console.error("Failed to load books:", error);
+      if (filter === "new") {
+        setDisplayBooks(getNewBooks());
+      } else if (filter === "popular") {
+        setDisplayBooks(getPopularBooks());
+      } else {
+        setDisplayBooks(getFilteredBooks());
+      }
     } finally {
       setIsLoading(false);
     }
@@ -75,9 +82,7 @@ const BookListScreen = () => {
   // 카테고리 변경 시 도서 목록 갱신
   useEffect(() => {
     if (!filter) {
-      if (USE_MOCK_DATA) {
-        setDisplayBooks(getFilteredBooks());
-      }
+      setDisplayBooks(getFilteredBooks());
     }
   }, [selectedCategory, getFilteredBooks, filter]);
 
@@ -102,6 +107,7 @@ const BookListScreen = () => {
         setDisplayBooks(data.content || data || []);
       } catch (error) {
         console.error("Failed to load category books:", error);
+        setDisplayBooks(getFilteredBooks());
       } finally {
         setIsLoading(false);
       }

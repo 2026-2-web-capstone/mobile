@@ -20,6 +20,7 @@ import BookCard from "../components/BookCard";
 import { useBooks } from "../contexts/BookContext";
 import { USE_MOCK_DATA } from "../api/config";
 import { bookApi } from "../api/bookApi";
+import { mockBooks } from "../utils/mockData";
 import {
   colors,
   borderRadius,
@@ -63,6 +64,10 @@ const HomeScreen = () => {
       setAllBooks(booksData.content || booksData);
     } catch (error) {
       console.error("Failed to load home data:", error);
+      const fallbackBooks = books.length > 0 ? books : mockBooks;
+      setNewBooks(getNewBooks().slice(0, 5));
+      setPopularBooks(getPopularBooks());
+      setAllBooks(fallbackBooks.slice(0, 8));
     } finally {
       setIsLoading(false);
     }

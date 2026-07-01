@@ -75,6 +75,7 @@ const BookDetailScreen = () => {
       }
     } catch (error) {
       console.error("Failed to load book:", error);
+      setBook(getBookById(bookId));
     } finally {
       setIsLoadingBook(false);
     }
@@ -256,7 +257,9 @@ const BookDetailScreen = () => {
       {/* 이미지 */}
       <View style={styles.imageContainer}>
         <Image
-          source={{ uri: book.image }}
+          source={{
+            uri: book.image || book.thumbnailUrl || (book.images && book.images[0]),
+          }}
           style={styles.image}
           resizeMode="cover"
         />
